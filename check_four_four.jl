@@ -1,7 +1,7 @@
 using IterTools
 using Distributed
 
-N = 4
+N = 5
 op = [:+, :-, :*, :/, :^]
 fun = [:sqrt, :factorial]
 
@@ -17,9 +17,6 @@ function perform(all_values)
     all_fun = Iterators.product(fun, all_values)
 
     all_exprs = Vector{Expr}(undef, size_op + size_fun)
-
-    #println(collect(all_op), collect(all_fun))
-    #all_values = vcat(collect(all_op)..., collect(all_fun)...)
 
     for (i, t) in enumerate(all_op)
         all_exprs[i] = Expr(:call, t...)
@@ -71,7 +68,7 @@ function pow_negative_big(expr::Expr)
 end 
 
 function sqrt_fact_negative(expr::Expr)
-    if !(expr.args[1] in [:sqrt, :factorial])
+    if !in(expr.args[1], [:sqrt, :factorial])
         return true
     else
         return eval(expr.args[2]) >= 0
@@ -86,6 +83,37 @@ function big_factorials(expr::Expr)
     end
 end
 
+
+function reduce_equivalents(expr_vals)
+    dd = Dict()
+    for (value, expr) in expr_vals
+        if haskey(dd, value)
+            push!(dd[value], expr)
+        else
+            dd[value] = [expr]
+        end
+    end
+
+    new_expr_vals = []
+    for (val, li_expr) in dd
+        nb_n_done = []
+        for expr in li_expr
+            nb_n = count_N(expr)
+            if !in(nb_n, nb_n_done)
+                push!(new_expr_vals, (val, expr))
+                push!(nb_n_done, nb_n)
+            end
+        end
+    end
+
+    return new_expr_vals
+end
+
+no_pow_mul(expr::Expr) = !in(expr.args[2], [:*, :^])
+no_sqrt(expr::Expr) = !in(expr.args[1], [:sqrt])
+two_add(expr::Expr) = count(i -> i == :+, expands(expr)) == 2
+no_55(expr::Expr) = count(i -> i == 55, expands(expr)) == 0
+
 function main(number)
     all_values = []
     for i = 1:N
@@ -95,33 +123,33 @@ function main(number)
         all_values = Iterators.filter(big_factorials, all_values)
         all_values = Iterators.filter(sqrt_fact_negative, all_values)
         all_values = Iterators.filter(pow_negative_big, all_values)
+
+        ### to remove
+        all_values = Iterators.filter(no_pow_mul, all_values)
+        all_values = Iterators.filter(no_55, all_values)
+        all_values = Iterators.filter(no_sqrt, all_values)
         
-        expr_vals = pmap(expr -> (eval(expr), expr), all_values)
-        new_vals = []
+        #all_values = Iterators.filter(two_add, all_values)
+        
+        ##
+
+        expr_vals = map(expr -> (eval(expr), expr), all_values)
+        expr_vals = filter(item -> -1000 < item[1] < 1000, expr_vals)
+        expr_vals = reduce_equivalents(expr_vals)
+        
+        all_exprs = []
         for (value, expr) in expr_vals
             if eval(expr) == number && equal_N(expr)
                 return expr
             end
-            if -1000 < value < 1000 && count_N(expr) < N
-                push!(new_vals, expr)
-            end
+            push!(all_exprs, expr)
         end
-        all_values = new_vals
+        all_values = all_exprs # map(item -> item[2], expr_vals)
+        println(all_values)
     end
 end
 
-for i = 40:60
-    expr = main(i)
-    println(eval(expr),": ", expr)
-end
-
-# 31: ???
-# 32: 4 ^ 4 / (4 + 4)
-# 33: ???
-# 34: factorial(4) + (sqrt(4) + (4 + 4))
-# 35: factorial(4) + 44 / 4
-# 36: 44 - (4 + 4)
-# 37: ???
-# 38: (44 - 4) - sqrt(4)
-# 39: ??
-# 40: 4 * (sqrt(4) + (4 + 4))
+#for i = 34:60
+#    expr = main(i)
+#    println(eval(expr),": ", expr)
+#end
